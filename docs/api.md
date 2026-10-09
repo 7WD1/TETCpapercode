@@ -36,7 +36,7 @@ This phase makes no classifier calls and performs no new compilation or bridging
 | `scope` | `finite_processed_feature_reconstruction` |
 | `compiled_semantics` | `positive_construction_minterms_closed_world` |
 | `mapping` | Retained/dropped indices, representatives, thresholds, importance and center code |
-| `audit` | Construction/hold-out coverage, actual checks, review flags, separately counted black-box rows |
+| `audit` | Construction/hold-out coverage, actual checks, review flags, and prediction-query row counts |
 | `config` | Frozen construction/query budgets and seed |
 | `answers` | Four compiled queries and reconstructed-target evidence statuses |
 | `sharing` | Cache entries, family requests, actual transition rows, raw-domain coverage |
