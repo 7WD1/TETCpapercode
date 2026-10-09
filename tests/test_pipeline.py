@@ -25,6 +25,7 @@ def test_pipeline_full_construction_roundtrip_and_no_rebuild():
     assert artifact.target_label == "yes"
     assert artifact.audit["holdout_fidelity"] is None
     assert artifact.audit["construction_complete"]
+    assert artifact.audit["holdout_interpretation"] == "not_available_full_cube_constructed"
     assert not artifact.audit["flags"]
     before = list(calls)
     answers = engine.answer_batch([artifact], [(0, "why"), (0, "why_not"),
@@ -46,6 +47,7 @@ def test_split_is_disjoint_keeps_center_and_reports_actual_holdout():
     assert artifact.mapping.encode(np.ones(3)) in artifact.circuit.observations
     assert artifact.audit["holdout_count"] == 1
     assert artifact.audit["holdout_fidelity"] == 0
+    assert artifact.audit["holdout_interpretation"] == "disjoint_reconstructed_codes"
     assert "holdout_fidelity_below_threshold" in artifact.audit["flags"]
     assert artifact.runtime.raw_complete
     assert not artifact.runtime.raw_equivalent
@@ -79,6 +81,18 @@ def test_sampling_and_holdout_are_replayable_and_disjoint():
                                    np.ones(6), background(6))
     assert artifact.audit["holdout_count"] == 5
     assert not artifact.audit["construction_complete"]
+
+
+def test_incomplete_construction_without_holdout_has_accurate_metadata():
+    config = Config(feature_budget=2, enumeration_limit=0, hamming_radius=0,
+                    near_budget=1, far_budget=0, holdout_budget=0)
+    artifact = ReQCAPS(config).build(and_classifier, np.ones(2), background())
+    assert artifact.audit["construction_count"] == 1
+    assert not artifact.audit["construction_complete"]
+    assert artifact.audit["holdout_count"] == 0
+    assert artifact.audit["holdout_fidelity"] is None
+    assert artifact.audit["holdout_interpretation"] == "not_available_incomplete_construction"
+    assert "incomplete_construction_without_holdout" in artifact.audit["flags"]
 
 
 def test_validity_predicate_is_not_silently_ignored():

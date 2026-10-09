@@ -113,7 +113,9 @@ class ReQCAPS:
                  "known_raw_codes": len(evidence), "raw_domain_complete": runtime.raw_complete,
                  "construction_agreement": float(np.mean(constructed_matches)),
                  "holdout_fidelity": holdout_fidelity,
-                 "holdout_interpretation": "disjoint_reconstructed_codes" if held else "not_available_full_cube_constructed",
+                 "holdout_interpretation": ("disjoint_reconstructed_codes" if held else
+                                            "not_available_full_cube_constructed" if diagram.complete else
+                                            "not_available_incomplete_construction"),
                  "circuit_automaton_agreement_on_observed_codes": agreement,
                  "blackbox_rows_evaluated": blackbox.query_count,
                  "screening_rows_evaluated_including_anchor": screening_queries,

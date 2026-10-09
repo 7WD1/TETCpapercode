@@ -109,19 +109,26 @@ class Automaton:
         @lru_cache(None)
         def visit(state):
             _, step = self.state_keys[state]
+            # Keep unreachable paths distinct from reachable costs that overflow.
             if step == self.n:
-                return (0.0, ()) if int(self.accepts[state]) == target else (float("inf"), ())
+                return (0.0, ()) if int(self.accepts[state]) == target else None
             variable = self.order[step]
             candidates = []
             for value in (0, 1):
-                downstream, suffix = visit(int(self.transitions[state, value]))
+                result = visit(int(self.transitions[state, value]))
+                if result is None:
+                    continue
+                downstream, suffix = result
                 cost = downstream + (float(costs[variable]) if value != center[variable] else 0.0)
                 candidates.append((cost, (value,) + suffix))
-            return min(candidates)
+            return min(candidates) if candidates else None
 
-        distance, scheduled = visit(self.start)
-        if not np.isfinite(distance):
+        result = visit(self.start)
+        if result is None:
             return {"distance": None, "robust": True, "witness": None}
+        distance, scheduled = result
+        if not np.isfinite(distance):
+            raise OverflowError("minimum weighted flip cost exceeds finite floating-point range")
         witness = [0] * self.n
         for variable, value in zip(self.order, scheduled):
             witness[variable] = value

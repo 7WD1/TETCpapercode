@@ -11,15 +11,15 @@
 ![Backend](https://img.shields.io/badge/backend-portable_ROBDD-2563EB)
 ![Scope](https://img.shields.io/badge/release-method_implementation-0F766E)
 
-[Quick start](#quick-start) · [Method](#method-at-a-glance) · [Semantics](#read-the-guarantees-correctly) · [Configuration](#configuration) · [Developer guide](docs/development.md)
+[Quick start](#quick-start) · [Method](#method-at-a-glance) · [Semantics](#query-semantics) · [Configuration](#configuration) · [Developer guide](docs/development.md)
 
 </div>
 
 ---
 
-ReQ-CAPS turns a numeric tabular classifier's local reconstructed behavior into an explicit Boolean circuit and a matching finite-state runtime. WHY, WHY-NOT, INTERACTION and SENSITIVITY reuse that same object; they do not resample the classifier or rebuild the circuit for each question.
+ReQ-CAPS turns a numeric tabular classifier's local reconstructed behavior into an explicit Boolean circuit and a matching finite-state runtime. WHY, WHY-NOT, INTERACTION and SENSITIVITY share one construction and reuse the same object and cached evaluations.
 
-This repository provides an executable **reference implementation of the method** described in the ReQ-CAPS manuscript submitted to IEEE TETC. The release contains implementation code, configuration, documentation and small correctness tests. Reproducing the manuscript's quantitative benchmarks requires the original fitted models, dataset versions, frozen splits and experiment records, which are outside this method release.
+This repository provides an executable **reference implementation of the method** described in the ReQ-CAPS manuscript submitted to IEEE TETC. The release contains implementation code, configuration, documentation and small correctness tests. The manuscript and supplementary material report the benchmark protocol and historical quantitative results.
 
 ## Method at a glance
 
@@ -42,7 +42,7 @@ flowchart LR
 | **CAB** | Frozen post-sifting schedule; decision and terminal states; explicit skipped-layer debt states; vectorized batch transitions; replayable traces | [`automaton.py`](src/reqcaps/automaton.py) |
 | **UESS** | Exact minimum-cardinality WHY; single-bit WHY-NOT; non-additive pairwise interactions; exact sphere counts and weighted nearest flips; shared point and family caches | [`queries.py`](src/reqcaps/queries.py) |
 
-The portable BDD backend uses ordinary edges and a unique table. Its sifting procedure moves each variable through candidate positions, rebuilds the same Boolean function and retains strictly smaller graphs. It is **not CUDD**, and it does not claim bit-for-bit equivalence with a CUDD ordering heuristic or the historical timing environment.
+The portable Python BDD backend uses ordinary edges and a unique table. Its sifting procedure moves each variable through candidate positions, rebuilds the same Boolean function and retains strictly smaller graphs. NumPy executes batched automaton transitions through transition-table gathers. The manuscript's historical timing environment uses CUDD and is described in the supplementary material.
 
 ## Quick start
 
@@ -56,7 +56,7 @@ python -m pip install -e ".[test]"
 python -m pytest -q
 ```
 
-Only NumPy is required at runtime. A deterministic scikit-learn-compatible `predict(X)` object or a deterministic callable returning one scalar class label per row can be used. Keep the predictor and preprocessing fixed during construction. Numeric and string class labels are retained without assuming a class numbered `1`.
+NumPy is the runtime dependency. A deterministic scikit-learn-compatible `predict(X)` object or a deterministic callable returning one scalar class label per row can be used. Keep the predictor and preprocessing fixed during construction. The classifier adapter retains numeric and string class labels and reconstructs the indicator of the audited target label.
 
 ```python
 import numpy as np
@@ -69,7 +69,7 @@ background = np.array([[-1., -1.], [-1., 1.], [1., -1.], [1., 1.]])
 engine = ReQCAPS(Config(feature_budget=2, seed=42))
 artifact = engine.build(classifier, np.array([1., 1.]), background)
 
-# Build once; these calls query the existing circuit/DFA only.
+# Build once; these calls reuse the existing circuit/DFA.
 answers = artifact.answer_all()
 why = answers["why"]["canonical_original_indices"]
 profile = answers["sensitivity"]["profile"]
@@ -77,11 +77,11 @@ weighted = artifact.runtime.answer("sensitivity", costs=[1., 2.])
 trace = artifact.automaton.trace([0, 1])
 ```
 
-This example does not print results or write files. The library performs no network access and runs no experiments on import.
+This example keeps the artifact, answers and trace in memory. Predictor evaluation occurs during construction; query calls reuse the frozen local object.
 
 ### CLI
 
-Prepare a module containing a predictor and numeric CSVs with **no header**, using the same processed feature columns in both files. Then:
+Prepare a module containing a fitted predictor and **headerless numeric CSVs**, using the same processed feature columns in both files. Then:
 
 ```bash
 reqcaps --model my_model:predict \
@@ -89,27 +89,27 @@ reqcaps --model my_model:predict \
   --config configs/default.json
 ```
 
-The command builds and queries quietly. It creates no result file unless an explicit `--output artifact.json` option is supplied. `--factory` calls a no-argument model factory instead of treating the imported attribute as the predictor. There is no automatic model training or dataset download. See [`docs/api.md`](docs/api.md) for the API, schema and batch requests.
+The command builds and queries quietly. `--output artifact.json` enables JSON serialization to a file. `--factory` obtains the predictor by calling the imported attribute as a factory with zero arguments. See [`docs/api.md`](docs/api.md) for the API, schema and batch requests.
 
-## Read the guarantees correctly
+## Query semantics
 
 Two functions have different meanings:
 
-1. **Reconstructed target**: `f_x(v) = 1[predict(rho_x(v)) == predict(x)]`. Outside the queried codes its value is **unknown**, not zero.
-2. **Compiled function**: `G(v)` is the OR of the **positive construction minterms**. At an unconstructed code it returns zero by the explicit closed-world extension. This zero is a circuit value, not an observed classifier label.
+1. **Reconstructed target**: `f_x(v) = 1[predict(rho_x(v)) == predict(x)]`. Its evidence status at an unqueried code is **unknown**.
+2. **Compiled function**: `G(v)` is the OR of the **positive construction minterms**. At an unconstructed code it returns zero by the explicit closed-world extension. This zero belongs to the compiled predicate; the reconstructed-target label remains unknown until queried.
 
-`G` matches every construction label exactly. With full Boolean construction it matches the reconstructed target on the whole finite domain. The bridge preserves `G` under the frozen input schedule. Neither property establishes fidelity to every continuous input, causal effects, actionable recourse or a classifier's global behavior.
+`G` matches every construction label exactly. With full Boolean construction it matches the reconstructed target on the whole finite domain. The bridge preserves `G` under the frozen input schedule. These guarantees apply to the frozen finite reconstructed function around the audited instance.
 
-Each answer reports `status: exact_on_compiled_object` when its circuit query is exact. Separate `raw_target_status`, `raw_minimum_certified`, support statuses and sensitivity bounds expose whether the **queried reconstructed target evidence** justifies the same claim. Missing evidence produces `unknown`; known mismatches produce `known_disagreement`. A finite sample is never turned into a certificate of global robustness.
+Each answer reports `status: exact_on_compiled_object` when its circuit query is exact. Separate `raw_target_status`, `raw_minimum_certified`, support statuses and sensitivity bounds describe the supporting **queried reconstructed-target evidence**. Missing evidence produces `unknown`; known mismatches produce `known_disagreement`. WHY includes an observed disagreement witness with the differing compiled/raw outputs. Robustness certificates refer to this finite domain and transfer to the reconstructed target when equivalence is established.
 
 | Query | Meaning and correctness limit |
 | :--- | :--- |
 | **WHY** | All minimum-cardinality subsets whose fixed center literals imply the compiled center output. Includes an empty reason for a constant function; lexicographic original-feature tie-break. If the subset budget expires, the minimum is returned as unknown. |
-| **WHY-NOT** | Bits whose individual flip changes the compiled center output. This is the manuscript's single-bit overturning set; it is not a full enumeration of all counterfactual edits. |
+| **WHY-NOT** | Bits whose individual flip changes the compiled center output: the manuscript's single-bit overturning set. |
 | **INTERACTION** | `abs(G(v_ij) - G(v_i) - G(v_j) + G(v))`, in `{0,1,2}`; normalized magnitude divides by 2. This is a pointwise Boolean effect. |
-| **SENSITIVITY** | Exact disagreement counts on every Hamming sphere, from integer dynamic programming; exact weighted closest compiled flip with a witness. `distance: null, robust: true` represents no compiled flip, and certifies the reconstructed target only when equivalence is established. |
+| **SENSITIVITY** | Exact disagreement counts on every Hamming sphere, from integer dynamic programming; exact weighted closest compiled flip with a witness. `distance: null, robust: true` denotes an unreachable compiled flip; reconstructed-target certification requires established equivalence. A reachable minimum beyond the finite floating-point range raises `OverflowError`. |
 
-Conditional-mean reconstruction operates in the **processed numeric model space**. It does not automatically preserve raw-domain categorical, one-hot, relational, legal or actionability constraints. Supply `validity(X)` to reject inadmissible processed vectors; rejection remains explicit. If reconstruction changes the audited center label, `center_reconstruction_disagreement` requires review. No answer is presented as a certified explanation of the original decision in that case.
+Conditional-mean reconstruction operates in the **processed numeric model space**. Encode categorical, one-hot, relational, legal or actionability constraints in `validity(X)` to validate each processed vector; inadmissible vectors cause explicit rejection. If reconstruction changes the audited center label, `center_reconstruction_disagreement` requires review and the answers describe the compiled center as a diagnostic object. Center preservation is required to interpret the reconstructed target as support for the original decision.
 
 ## Configuration
 
@@ -117,19 +117,19 @@ Conditional-mean reconstruction operates in the **processed numeric model space*
 
 | Mode | Construction / audit split | Interpretation |
 | :--- | :--- | :--- |
-| **Exact finite-domain mode** — default, `holdout_fraction=0` | Full cube used for construction; disjoint Boolean hold-out does not exist, so hold-out fidelity is `null` | Exact semantics for the reconstructed finite function; no invented held-out score |
+| **Exact finite-domain mode** — default, `holdout_fraction=0` | Full cube used for construction; the remaining audit partition is empty and hold-out fidelity is `null` | Exact semantics for the reconstructed finite function |
 | **Sampled mode** — `n > enumeration_limit` | Budgeted near/far construction; independent disjoint audit codes where available | Exact on construction; extension risk visible in actual hold-out fidelity and evidence statuses |
-| **Split construction mode** — [`split-construction.json`](configs/split-construction.json) | 20% of sampled codes held out, keeping the center in construction | Recreates a split setting honestly; held-out positives are rejected by the positive-minterm extension and can fail the fidelity guard |
+| **Split construction mode** — [`split-construction.json`](configs/split-construction.json) | 20% of sampled codes held out, keeping the center in construction | Held-out positive codes receive compiled zero and can trigger the fidelity guard |
 
-The near sampler enumerates the complete Hamming ball when it fits the budget; otherwise it samples unique near codes and reports `near_complete: false`. Budgets are upper bounds; a finite domain or duplicate draws can yield fewer points. Hold-out codes are always disjoint from construction. Black-box counts refer to evaluated rows after deterministic input caching and include screening and the original anchor separately from reconstruction calls.
+The near sampler enumerates the complete Hamming ball when it fits the budget; otherwise it samples unique near codes and reports `near_complete: false`. Budgets are upper bounds; a finite domain or duplicate draws can yield fewer points. Hold-out codes are always disjoint from construction. An incomplete construction with an empty hold-out is labeled `not_available_incomplete_construction` and flagged for review. Black-box counts refer to evaluated rows after deterministic input caching and include screening and the original anchor separately from reconstruction calls.
 
-For a workload, use `build_batch` once and `answer_batch` repeatedly. Each audited instance retains its own local circuit/DFA pair; sharing occurs across requests to that object. Batched DFA execution uses NumPy transition-table gathers. This reference backend does not claim multithreaded speedups or the manuscript's reported throughput.
+For a workload, use `build_batch` once and `answer_batch` repeatedly. Each audited instance retains its own local circuit/DFA pair; sharing occurs across requests to that object. The instance build loop is sequential, and batched DFA execution vectorizes transitions with NumPy transition-table gathers.
 
-## Verification and release scope
+## Verification
 
-The tests use tiny synthetic Boolean oracles and processed numeric inputs to check compilation, sifting, reordered input schedules, debt states, minimum reasons, weighted witness optimality, exact sphere counts, unknown-value semantics, budget failures, disjoint hold-outs and cache reuse. They do not train benchmark models or calculate the paper's performance tables. CI runs these correctness tests on Python 3.10 and 3.12.
+The tests use small Boolean oracles and processed numeric inputs to check compilation, sifting, reordered input schedules, debt states, minimum reasons, weighted witness optimality and overflow, exact sphere counts, unknown-value semantics, observed disagreement witnesses, budget failures, disjoint hold-outs and cache reuse. CI runs these correctness tests on Python 3.10 and 3.12. Benchmark settings and performance tables are recorded in the manuscript and supplementary material.
 
 See [`docs/method.md`](docs/method.md) for the algorithm mapping, [`docs/development.md`](docs/development.md) for validation commands and complexity, and [`CITATION.cff`](CITATION.cff) for citation metadata.
 
-**Licensing:** A reuse license has not been specified by the rights holder; see [`LICENSING.md`](LICENSING.md).
+**Licensing:** Reuse licensing is pending designation by the rights holder; see [`LICENSING.md`](LICENSING.md).
 

@@ -150,3 +150,63 @@ def test_holdout_evidence_cannot_certify_closed_world_as_raw_target():
     assert runtime.sensitivity()["raw_target_status"] == "known_disagreement"
     assert not runtime.sensitivity()["raw_minimum_certified"]
 
+
+@pytest.mark.parametrize("order", [(0, 1), (1, 0)])
+def test_weighted_overflow_is_distinct_from_unreachable_or_finite_flip(order):
+    rows = cube(2)
+    costs = [1e308, 1e308]
+    conjunction = ROBDD.compile(rows, [a and b for a, b in rows], order=order)
+    machine = Automaton(conjunction)
+    assert machine.run((1, 1)) != machine.run((0, 0))
+    with pytest.raises(OverflowError, match="minimum weighted flip cost"):
+        machine.nearest_flip((0, 0), costs)
+    with pytest.raises(OverflowError, match="minimum weighted flip cost"):
+        QueryRuntime(conjunction, machine, (0, 0)).sensitivity(costs)
+
+    # A more expensive overflow path must leave a representable optimum usable.
+    disjunction = ROBDD.compile(rows, [a or b for a, b in rows], order=order)
+    nearest = Automaton(disjunction).nearest_flip((0, 0), costs)
+    assert nearest["distance"] == 1e308
+    assert not nearest["robust"]
+    assert sum(nearest["witness"]) == 1
+    assert disjunction.evaluate(nearest["witness"]) == 1
+
+    constant = ROBDD.compile(rows, [0] * len(rows), order=order)
+    assert Automaton(constant).nearest_flip((0, 0), costs) == {
+        "distance": None, "robust": True, "witness": None}
+
+
+@pytest.mark.parametrize("subset_budget", [1, 100000])
+def test_why_known_raw_disagreement_retains_observed_witness(subset_budget):
+    diagram = ROBDD.compile([(1, 1)], [1], n=2)
+    evidence = {(0, 0): 1, (1, 1): 1}
+    runtime = QueryRuntime(diagram, Automaton(diagram), (0, 0),
+                           raw_evidence=evidence, subset_budget=subset_budget)
+    answer = runtime.why()
+    assert answer["raw_target_status"] == "known_disagreement"
+    witness = answer["raw_disagreement_witness"]
+    row = tuple(witness["assignment"])
+    assert witness["raw_output"] == evidence[row] == 1
+    assert witness["compiled_output"] == diagram.evaluate(row) == 0
+    if subset_budget == 1:
+        assert answer["status"] == "budget_exceeded"
+        assert answer["minimum_cardinality"] is None
+    else:
+        assert answer["raw_sufficiency_statuses"] == ["known_disagreement"] * 2
+        assert answer["raw_minimum_status"] == "unknown"
+
+
+def test_why_object_disagreement_and_reason_support_are_separate():
+    diagram = ROBDD.compile([(1, 1)], [1], n=2)
+    runtime = QueryRuntime(diagram, Automaton(diagram), (1, 1),
+                           raw_evidence={(0, 0): 1, (1, 1): 1})
+    answer = runtime.why()
+    assert answer["raw_target_status"] == "known_disagreement"
+    assert answer["raw_sufficiency_statuses"] == ["known_agreement"]
+    assert answer["raw_minimum_status"] == "unknown"
+    assert answer["raw_disagreement_witness"]["assignment"] == [0, 0]
+
+    unknown = QueryRuntime(diagram, Automaton(diagram), (1, 1)).why()
+    assert unknown["raw_target_status"] == "unknown"
+    assert unknown["raw_disagreement_witness"] is None
+

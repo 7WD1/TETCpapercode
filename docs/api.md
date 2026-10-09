@@ -55,5 +55,7 @@ This phase makes no classifier calls and performs no new compilation or bridging
 
 `raw_sufficiency_statuses` can establish a particular sufficient reason on a fully observed cofactor even when its **minimum** status on the target function is unknown. `raw_rate_bounds` state observed coverage bounds per Hamming sphere. A hold-out score evaluates rho-reconstructed codes, not arbitrary unseen real inputs.
 
+WHY reports a known reconstructed-target disagreement before an unknown equivalence status, including when its subset budget expires. Its `raw_disagreement_witness` identifies an observed code and the differing compiled/raw outputs; this witness establishes disagreement with the compiled object, while the per-reason support statuses describe the sufficient cofactors. Weighted sensitivity raises `OverflowError` if a reachable minimum cost exceeds the finite floating-point range, keeping overflow separate from an unreachable flip. An incomplete construction with an empty hold-out uses `audit.holdout_interpretation: not_available_incomplete_construction`.
+
 Review `audit.requires_review` and `audit.flags` before interpreting answers as evidence about the audited classifier. Direct CLI execution is quiet and leaves those flags available in an explicitly requested JSON artifact.
 

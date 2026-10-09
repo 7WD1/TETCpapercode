@@ -22,8 +22,9 @@ class QueryRuntime:
             raise ValueError("raw evidence must have binary reconstructed-target labels")
         self.evidence = MappingProxyType({bits(row, diagram.n): int(value) for row, value in evidence.items()})
         self.raw_complete = len(self.evidence) == (1 << diagram.n)
-        self.raw_equivalent = self.raw_complete and all(diagram.evaluate(row) == value
-                                                       for row, value in self.evidence.items())
+        self._raw_disagreement_row = next((row for row, value in self.evidence.items()
+                                           if diagram.evaluate(row) != value), None)
+        self.raw_equivalent = self.raw_complete and self._raw_disagreement_row is None
         self._points = {}
         self._answers = {}
         self.transition_rows_evaluated = 0
@@ -55,6 +56,12 @@ class QueryRuntime:
     def why(self):
         """All minimum-cardinality sufficient reasons; never label greediness exact."""
         center_value = self.evaluate_batch([self.center])[0]
+        raw_status = ("known_disagreement" if self._raw_disagreement_row is not None else
+                      "known_agreement" if self.raw_equivalent else "unknown")
+        disagreement = (None if self._raw_disagreement_row is None else
+                        {"assignment": list(self._raw_disagreement_row),
+                         "compiled_output": self.diagram.evaluate(self._raw_disagreement_row),
+                         "raw_output": self.evidence[self._raw_disagreement_row]})
         n = self.diagram.n
         examined = 0
         ordering = sorted(range(n), key=lambda i: self.feature_indices[i])
@@ -65,7 +72,8 @@ class QueryRuntime:
                 if examined > self.subset_budget:
                     return {"status": "budget_exceeded", "minimum_cardinality": None,
                             "reasons": [], "subset_tests": examined - 1,
-                            "compiled_output": center_value, "raw_target_status": "unknown"}
+                            "compiled_output": center_value, "raw_target_status": raw_status,
+                            "raw_disagreement_witness": disagreement}
                 fixed = {i: self.center[i] for i in subset}
                 if self.diagram.implies(fixed, center_value):
                     reasons.append(list(subset))
@@ -85,7 +93,8 @@ class QueryRuntime:
                         "canonical_original_indices": [self.feature_indices[i] for i in reasons[0]],
                         "subset_tests": examined, "raw_sufficiency_statuses": supports,
                         "raw_minimum_status": "certified" if self.raw_equivalent else "unknown",
-                        "raw_target_status": "known_agreement" if self.raw_equivalent else "unknown"}
+                        "raw_target_status": raw_status,
+                        "raw_disagreement_witness": disagreement}
         raise RuntimeError("fixing every bit must imply the center output")
 
     def why_not(self):
@@ -147,8 +156,7 @@ class QueryRuntime:
                 "weighted_minimum": nearest,
                 "raw_observed_cost_upper_bound": min(observed_costs) if observed_costs else None,
                 "raw_target_status": "known_agreement" if self.raw_equivalent else
-                                     "known_disagreement" if any(self.diagram.evaluate(row) != value
-                                     for row, value in self.evidence.items()) else "unknown",
+                                     "known_disagreement" if self._raw_disagreement_row is not None else "unknown",
                 "raw_minimum_certified": self.raw_equivalent}
 
     def answer(self, family, *, costs=None):
