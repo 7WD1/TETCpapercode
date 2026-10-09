@@ -1,0 +1,17 @@
+{
+  "feature_budget": 10,
+  "background_samples": 50,
+  "enumeration_limit": 15,
+  "hamming_radius": 3,
+  "near_budget": 2000,
+  "far_budget": 200,
+  "holdout_budget": 200,
+  "holdout_fraction": 0.0,
+  "seed": 42,
+  "ordering": "sift",
+  "sifting_passes": 2,
+  "node_budget": 50000,
+  "why_subset_budget": 100000,
+  "fidelity_threshold": 0.9
+}
+

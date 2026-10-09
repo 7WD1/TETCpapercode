@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "Please cite the ReQ-CAPS manuscript when using this method implementation."
+title: "ReQ-CAPS: Logic-Circuit and Automaton Semantics for Auditable Post-Hoc Explanation"
+type: software
+version: 0.1.0
+date-released: 2026-10-09
+url: "https://github.com/7WD1/TETCpapercode"
+repository-code: "https://github.com/7WD1/TETCpapercode"
+authors:
+  - family-names: Jiang
+    given-names: Wen-Dong
+  - family-names: Huang
+    given-names: Hzu-Chia
+  - family-names: Chang
+    given-names: Chih-Yung
+  - family-names: Kuai
+    given-names: Ssu-Chi
+  - family-names: Wang
+    given-names: Chong
+  - family-names: Roy
+    given-names: Diptendu Sinha
+
